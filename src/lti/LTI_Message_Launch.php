@@ -262,8 +262,14 @@ class LTI_Message_Launch {
             throw new LTI_Public_Key_Exception("Failed to fetch public key from {$key_set_url}: {$reason}");
         }
 
-        // $http_response_header is set by file_get_contents() for http(s) URLs.
-        $status_line = $http_response_header[0] ?? null;
+        // $http_response_header is set by file_get_contents() for http(s) URLs. When redirects are
+        // followed it holds the headers of every response in turn, so use the last status line.
+        $status_line = null;
+        foreach ($http_response_header ?? [] as $header) {
+            if (strpos($header, 'HTTP/') === 0) {
+                $status_line = $header;
+            }
+        }
         if ($status_line !== null && !preg_match('#^HTTP/\S+\s+2\d\d\b#', $status_line)) {
             throw new LTI_Public_Key_Exception("Failed to fetch public key from {$key_set_url}: {$status_line}");
         }

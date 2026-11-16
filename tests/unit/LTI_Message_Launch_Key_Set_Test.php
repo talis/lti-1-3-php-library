@@ -64,6 +64,19 @@ class LTI_Message_Launch_Key_Set_Test extends TestBase {
         $this->assertSame('test-kid', $keySet['keys'][0]['kid']);
     }
 
+    public function testFetchKeySetFollowsRedirect()
+    {
+        // The status check must use the final response, not the 302 that came first.
+        $keySet = $this->fetchKeySet(self::$baseUrl . '/redirect-to-certs');
+        $this->assertSame('test-kid', $keySet['keys'][0]['kid']);
+    }
+
+    public function testFetchKeySetRedirectToErrorThrowsWithFinalStatus()
+    {
+        $this->setExpectedException(LTI_Public_Key_Exception::class, '500');
+        $this->fetchKeySet(self::$baseUrl . '/redirect-to-server-error');
+    }
+
     public function testGetPublicKeyReturnsKeyMatchingKid()
     {
         $launch = $this->newLaunch(self::$baseUrl . '/certs', 'test-kid');

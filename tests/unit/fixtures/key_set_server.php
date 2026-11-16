@@ -30,6 +30,12 @@ switch (parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)) {
             ]],
         ]);
         return true;
+    case '/redirect-to-certs':
+        header('Location: /certs', true, 302);
+        return true;
+    case '/redirect-to-server-error':
+        header('Location: /server-error', true, 302);
+        return true;
     case '/server-error':
         http_response_code(500);
         echo json_encode(['keys' => []]);
