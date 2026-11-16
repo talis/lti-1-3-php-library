@@ -11,8 +11,7 @@ use ReflectionMethod;
 use ReflectionProperty;
 
 /**
- * Fetches the platform key set over real HTTP from PHP's built-in web server,
- * which (like Warwick's gateway in TA-4135) rejects HTTP/1.0 with 426.
+ * Fetches the key set from PHP's built-in server, which rejects HTTP/1.0 with 426.
  */
 class LTI_Message_Launch_Key_Set_Test extends TestBase {
     private static $server;
@@ -52,7 +51,7 @@ class LTI_Message_Launch_Key_Set_Test extends TestBase {
 
     public function testFixtureServerRejectsHttp10()
     {
-        // Guard: proves the fixture really does reject HTTP/1.0, so the next test means something.
+        // Guard: the fixture must reject HTTP/1.0 for the HTTP/1.1 test to mean anything.
         $context = stream_context_create(['http' => ['protocol_version' => 1.0, 'ignore_errors' => true]]);
         file_get_contents(self::$baseUrl . '/certs', false, $context);
         $this->assertContains('426', $http_response_header[0]);
@@ -66,7 +65,6 @@ class LTI_Message_Launch_Key_Set_Test extends TestBase {
 
     public function testFetchKeySetFollowsRedirect()
     {
-        // The status check must use the final response, not the 302 that came first.
         $keySet = $this->fetchKeySet(self::$baseUrl . '/redirect-to-certs');
         $this->assertSame('test-kid', $keySet['keys'][0]['kid']);
     }

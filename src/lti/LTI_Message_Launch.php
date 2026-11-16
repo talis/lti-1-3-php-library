@@ -214,11 +214,10 @@ class LTI_Message_Launch {
     }
 
     /**
-     * Stream context options used when downloading the platform's public key set.
+     * Stream context options for the key set request.
      *
-     * HTTP/1.1 is required: PHP's http stream wrapper defaults to HTTP/1.0, which some
-     * platform front ends (e.g. Envoy-based gateways) reject with "426 Upgrade Required".
-     * "Connection: close" stops PHP waiting for a kept-alive connection to end.
+     * PHP defaults to HTTP/1.0, which some gateways reject with 426. Connection: close avoids
+     * waiting on keep-alive.
      *
      * @return array
      */
@@ -245,7 +244,7 @@ class LTI_Message_Launch {
     protected function fetch_key_set($key_set_url) {
         $context = stream_context_create($this->get_key_set_http_context_options());
 
-        // Capture the stream warning (DNS, TLS, timeout...) so it can go in the exception message.
+        // Keep the stream warning for the exception message.
         $fetch_error = null;
         set_error_handler(function ($errno, $errstr) use (&$fetch_error) {
             $fetch_error = $errstr;
@@ -262,8 +261,7 @@ class LTI_Message_Launch {
             throw new LTI_Public_Key_Exception("Failed to fetch public key from {$key_set_url}: {$reason}");
         }
 
-        // $http_response_header is set by file_get_contents() for http(s) URLs. When redirects are
-        // followed it holds the headers of every response in turn, so use the last status line.
+        // Redirects add a status line per response; check the final one.
         $status_line = null;
         foreach ($http_response_header ?? [] as $header) {
             if (strpos($header, 'HTTP/') === 0) {

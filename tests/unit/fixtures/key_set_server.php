@@ -1,8 +1,6 @@
 <?php
 /**
- * Router for PHP's built-in web server, used by LTI_Message_Launch_Key_Set_Test.
- *
- * Mimics a platform behind an edge gateway that rejects HTTP/1.0 with 426 (TA-4135).
+ * Built-in server router for LTI_Message_Launch_Key_Set_Test: rejects HTTP/1.0 with 426.
  */
 
 if ($_SERVER['SERVER_PROTOCOL'] === 'HTTP/1.0') {
