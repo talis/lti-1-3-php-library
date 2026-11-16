@@ -227,7 +227,6 @@ class LTI_Message_Launch {
                 'protocol_version' => 1.1,
                 'header' => "User-Agent: lti-1-3-php-library\r\nConnection: close",
                 'timeout' => 10,
-                'ignore_errors' => true,
             ],
         ];
     }
@@ -259,17 +258,6 @@ class LTI_Message_Launch {
         if ($body === false) {
             $reason = $fetch_error !== null ? $fetch_error : 'unknown error';
             throw new LTI_Public_Key_Exception("Failed to fetch public key from {$key_set_url}: {$reason}");
-        }
-
-        // Redirects add a status line per response; check the final one.
-        $status_line = null;
-        foreach ($http_response_header ?? [] as $header) {
-            if (strpos($header, 'HTTP/') === 0) {
-                $status_line = $header;
-            }
-        }
-        if ($status_line !== null && !preg_match('#^HTTP/\S+\s+2\d\d\b#', $status_line)) {
-            throw new LTI_Public_Key_Exception("Failed to fetch public key from {$key_set_url}: {$status_line}");
         }
 
         $public_key_set = json_decode($body, true);
