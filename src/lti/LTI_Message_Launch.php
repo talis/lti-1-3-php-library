@@ -213,22 +213,77 @@ class LTI_Message_Launch {
         return $this->launch_id;
     }
 
+    /**
+     * Stream context options used when downloading the platform's public key set.
+     *
+     * HTTP/1.1 is required: PHP's http stream wrapper defaults to HTTP/1.0, which some
+     * platform front ends (e.g. Envoy-based gateways) reject with "426 Upgrade Required".
+     * "Connection: close" stops PHP waiting for a kept-alive connection to end.
+     *
+     * @return array
+     */
+    protected function get_key_set_http_context_options() {
+        return [
+            'http' => [
+                'protocol_version' => 1.1,
+                'header' => "User-Agent: lti-1-3-php-library\r\nConnection: close",
+                'timeout' => 10,
+                'ignore_errors' => true,
+            ],
+        ];
+    }
+
+    /**
+     * Download and decode the platform's public key set.
+     *
+     * @param string $key_set_url The platform's JWKS URL.
+     *
+     * @return array The decoded key set.
+     *
+     * @throws LTI_Public_Key_Exception If the key set cannot be fetched or is not a JSON key set.
+     */
+    protected function fetch_key_set($key_set_url) {
+        $context = stream_context_create($this->get_key_set_http_context_options());
+
+        // Capture the stream warning (DNS, TLS, timeout...) so it can go in the exception message.
+        $fetch_error = null;
+        set_error_handler(function ($errno, $errstr) use (&$fetch_error) {
+            $fetch_error = $errstr;
+            return true;
+        });
+        try {
+            $body = file_get_contents($key_set_url, false, $context);
+        } finally {
+            restore_error_handler();
+        }
+
+        if ($body === false) {
+            $reason = $fetch_error !== null ? $fetch_error : 'unknown error';
+            throw new LTI_Public_Key_Exception("Failed to fetch public key from {$key_set_url}: {$reason}");
+        }
+
+        // $http_response_header is set by file_get_contents() for http(s) URLs.
+        $status_line = $http_response_header[0] ?? null;
+        if ($status_line !== null && !preg_match('#^HTTP/\S+\s+2\d\d\b#', $status_line)) {
+            throw new LTI_Public_Key_Exception("Failed to fetch public key from {$key_set_url}: {$status_line}");
+        }
+
+        $public_key_set = json_decode($body, true);
+
+        if (empty($public_key_set) || !isset($public_key_set['keys']) || !is_array($public_key_set['keys'])) {
+            throw new LTI_Public_Key_Exception(
+                "Failed to fetch public key from {$key_set_url}: response is not a JSON key set"
+            );
+        }
+
+        return $public_key_set;
+    }
+
     protected function get_public_key() {
         $key_set_url = $this->registration->get_key_set_url();
 
-        $opts = [
-            'http' => ['header' => 'User-Agent:lti-1-3-php-library']
-        ];
-
-        $context = stream_context_create($opts);
-
         // Download key set
-        $public_key_set = json_decode(file_get_contents($key_set_url, false, $context), true);
-
-        if (empty($public_key_set)) {
-            // Failed to fetch public keyset from URL.
-            throw new LTI_Public_Key_Exception('Failed to fetch public key');
-        }
+        $public_key_set = $this->fetch_key_set($key_set_url);
 
         // Find key used to sign the JWT (matches the KID in the header)
         foreach ($public_key_set['keys'] as $key) {

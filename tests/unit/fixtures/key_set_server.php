@@ -1,0 +1,45 @@
+<?php
+/**
+ * Router for PHP's built-in web server, used by LTI_Message_Launch_Key_Set_Test.
+ *
+ * Mimics a platform behind an edge gateway that rejects HTTP/1.0 with 426 (TA-4135).
+ */
+
+if ($_SERVER['SERVER_PROTOCOL'] === 'HTTP/1.0') {
+    http_response_code(426);
+    header('Content-Type: text/plain');
+    echo 'Upgrade Required';
+    return true;
+}
+
+switch (parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)) {
+    case '/certs':
+        $details = openssl_pkey_get_details(openssl_pkey_get_public(file_get_contents(__DIR__ . '/private.pub')));
+        $base64url = function ($data) {
+            return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+        };
+        header('Content-Type: application/json');
+        echo json_encode([
+            'keys' => [[
+                'kty' => 'RSA',
+                'alg' => 'RS256',
+                'use' => 'sig',
+                'kid' => 'test-kid',
+                'n' => $base64url($details['rsa']['n']),
+                'e' => $base64url($details['rsa']['e']),
+            ]],
+        ]);
+        return true;
+    case '/server-error':
+        http_response_code(500);
+        echo json_encode(['keys' => []]);
+        return true;
+    case '/not-json':
+        header('Content-Type: text/html');
+        echo '<html>Not a key set</html>';
+        return true;
+    default:
+        http_response_code(404);
+        echo 'Not Found';
+        return true;
+}
