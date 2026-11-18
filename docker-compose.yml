@@ -8,13 +8,13 @@ services:
       - .:/app
     restart: never
   php73:
-    image: php:7.3-cli
+    image: php:8.5-cli
     volumes:
       - .:/app
     working_dir: /app
     restart: never
   phpunit73:
-    image: php:7.3-cli
+    image: php:8.5-cli
     restart: never
     volumes:
       - .:/app
