@@ -243,7 +243,6 @@ class LTI_Message_Launch {
     protected function fetch_key_set($key_set_url) {
         $context = stream_context_create($this->get_key_set_http_context_options());
 
-        // Keep the stream warning for the exception message.
         $fetch_error = null;
         set_error_handler(function ($errno, $errstr) use (&$fetch_error) {
             $fetch_error = $errstr;
@@ -273,11 +272,8 @@ class LTI_Message_Launch {
 
     protected function get_public_key() {
         $key_set_url = $this->registration->get_key_set_url();
-
-        // Download key set
         $public_key_set = $this->fetch_key_set($key_set_url);
 
-        // Find key used to sign the JWT (matches the KID in the header)
         foreach ($public_key_set['keys'] as $key) {
             if ($key['kid'] == $this->jwt['header']['kid']) {
                 try {
@@ -288,7 +284,6 @@ class LTI_Message_Launch {
             }
         }
 
-        // Could not find public key with a matching kid and alg.
         throw new LTI_Public_Key_Exception('Unable to find public key');
     }
 
