@@ -1,7 +1,7 @@
 version: '3.7'
 services:
   composer:
-    image: composer:2.6
+    image: composer:2.10
     environment:
       - COMPOSER_CACHE_DIR=/app/.cache/composer
     volumes:
