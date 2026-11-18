@@ -1,6 +1,7 @@
 <?php
 /**
- * Built-in server router for LTI_Message_Launch_Key_Set_Test: rejects HTTP/1.0 with 426.
+ * Stub platform key set server (built-in server router) for LTI_Message_Launch_Key_Set_Test.
+ * Rejects HTTP/1.0 with 426.
  */
 
 if ($_SERVER['SERVER_PROTOCOL'] === 'HTTP/1.0') {
@@ -12,7 +13,8 @@ if ($_SERVER['SERVER_PROTOCOL'] === 'HTTP/1.0') {
 
 switch (parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)) {
     case '/certs':
-        $details = openssl_pkey_get_details(openssl_pkey_get_public(file_get_contents(__DIR__ . '/private.pub')));
+        $public_key = file_get_contents(__DIR__ . '/../fixtures/private.pub');
+        $details = openssl_pkey_get_details(openssl_pkey_get_public($public_key));
         $base64url = function ($data) {
             return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
         };

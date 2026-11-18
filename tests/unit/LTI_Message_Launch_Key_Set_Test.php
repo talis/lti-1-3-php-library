@@ -22,7 +22,7 @@ class LTI_Message_Launch_Key_Set_Test extends TestBase {
         $port = self::findFreePort();
         self::$baseUrl = "http://127.0.0.1:{$port}";
         $command = escapeshellarg(PHP_BINARY) . " -S 127.0.0.1:{$port} "
-            . escapeshellarg(__DIR__ . '/fixtures/key_set_server.php');
+            . escapeshellarg(__DIR__ . '/helpers/key_set_server.php');
         self::$server = proc_open(
             $command,
             [0 => ['pipe', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']],
