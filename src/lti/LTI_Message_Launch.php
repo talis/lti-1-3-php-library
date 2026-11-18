@@ -213,24 +213,67 @@ class LTI_Message_Launch {
         return $this->launch_id;
     }
 
-    protected function get_public_key() {
-        $key_set_url = $this->registration->get_key_set_url();
-
-        $opts = [
-            'http' => ['header' => 'User-Agent:lti-1-3-php-library']
+    /**
+     * Stream context options for the key set request.
+     *
+     * PHP defaults to HTTP/1.0, which some gateways reject with 426. Connection: close avoids
+     * waiting on keep-alive.
+     *
+     * @return array
+     */
+    protected function get_key_set_http_context_options() {
+        return [
+            'http' => [
+                'protocol_version' => 1.1,
+                'header' => "User-Agent: lti-1-3-php-library\r\nConnection: close",
+                'timeout' => 10,
+            ],
         ];
+    }
 
-        $context = stream_context_create($opts);
+    /**
+     * Download and decode the platform's public key set.
+     *
+     * @param string $key_set_url The platform's JWKS URL.
+     *
+     * @return array The decoded key set.
+     *
+     * @throws LTI_Public_Key_Exception If the key set cannot be fetched or is not a JSON key set.
+     */
+    protected function fetch_key_set($key_set_url) {
+        $context = stream_context_create($this->get_key_set_http_context_options());
 
-        // Download key set
-        $public_key_set = json_decode(file_get_contents($key_set_url, false, $context), true);
-
-        if (empty($public_key_set)) {
-            // Failed to fetch public keyset from URL.
-            throw new LTI_Public_Key_Exception('Failed to fetch public key');
+        $fetch_error = null;
+        set_error_handler(function ($errno, $errstr) use (&$fetch_error) {
+            $fetch_error = $errstr;
+            return true;
+        });
+        try {
+            $body = file_get_contents($key_set_url, false, $context);
+        } finally {
+            restore_error_handler();
         }
 
-        // Find key used to sign the JWT (matches the KID in the header)
+        if ($body === false) {
+            $reason = $fetch_error !== null ? $fetch_error : 'unknown error';
+            throw new LTI_Public_Key_Exception("Failed to fetch public key from {$key_set_url}: {$reason}");
+        }
+
+        $public_key_set = json_decode($body, true);
+
+        if (empty($public_key_set) || !isset($public_key_set['keys']) || !is_array($public_key_set['keys'])) {
+            throw new LTI_Public_Key_Exception(
+                "Failed to fetch public key from {$key_set_url}: response is not a JSON key set"
+            );
+        }
+
+        return $public_key_set;
+    }
+
+    protected function get_public_key() {
+        $key_set_url = $this->registration->get_key_set_url();
+        $public_key_set = $this->fetch_key_set($key_set_url);
+
         foreach ($public_key_set['keys'] as $key) {
             if ($key['kid'] == $this->jwt['header']['kid']) {
                 try {
@@ -241,7 +284,6 @@ class LTI_Message_Launch {
             }
         }
 
-        // Could not find public key with a matching kid and alg.
         throw new LTI_Public_Key_Exception('Unable to find public key');
     }
 
