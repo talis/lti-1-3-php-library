@@ -2,16 +2,15 @@
 
 namespace IMSGlobal\LTI\Tests\unit;
 
+use Firebase\JWT\JWT;
+use IMSGlobal\LTI\Cookie;
 use IMSGlobal\LTI\LTI_Message_Launch;
 use IMSGlobal\LTI\LTI_Public_Key_Exception;
-use IMSGlobal\LTI\LTI_Registration;
 use IMSGlobal\LTI\Tests\unit\helpers\DummyDatabase;
 use IMSGlobal\LTI\Tests\unit\helpers\InMemoryCache;
-use ReflectionMethod;
-use ReflectionProperty;
 
 /**
- * Fetches the key set from PHP's built-in server, which rejects HTTP/1.0 with 426.
+ * Validates launches whose key set is served by a stub platform that rejects HTTP/1.0 with 426.
  */
 class LTI_Message_Launch_Key_Set_Test extends TestBase {
     private static $server;
@@ -49,78 +48,84 @@ class LTI_Message_Launch_Key_Set_Test extends TestBase {
         }
     }
 
-    public function testFixtureServerRejectsHttp10()
+    public function testStubServerRejectsHttp10()
     {
-        // Guard: the fixture must reject HTTP/1.0 for the HTTP/1.1 test to mean anything.
+        // Guard: the stub must reject HTTP/1.0 for the HTTP/1.1 tests to mean anything.
         $context = stream_context_create(['http' => ['protocol_version' => 1.0, 'ignore_errors' => true]]);
         file_get_contents(self::$baseUrl . '/certs', false, $context);
         $this->assertContains('426', $http_response_header[0]);
     }
 
-    public function testFetchKeySetUsesHttp11()
+    public function testValidateFetchesKeySetOverHttp11()
     {
-        $keySet = $this->fetchKeySet(self::$baseUrl . '/certs');
-        $this->assertSame('test-kid', $keySet['keys'][0]['kid']);
+        $launch = $this->validateLaunch(self::$baseUrl . '/certs');
+        $this->assertSame('aaa', $launch->get_launch_data()['iss']);
     }
 
-    public function testFetchKeySetFollowsRedirect()
+    public function testValidateFollowsKeySetRedirect()
     {
-        $keySet = $this->fetchKeySet(self::$baseUrl . '/redirect-to-certs');
-        $this->assertSame('test-kid', $keySet['keys'][0]['kid']);
+        $launch = $this->validateLaunch(self::$baseUrl . '/redirect-to-certs');
+        $this->assertSame('aaa', $launch->get_launch_data()['iss']);
     }
 
-    public function testFetchKeySetRedirectToErrorThrowsWithFinalStatus()
-    {
-        $this->setExpectedException(LTI_Public_Key_Exception::class, '500');
-        $this->fetchKeySet(self::$baseUrl . '/redirect-to-server-error');
-    }
-
-    public function testGetPublicKeyReturnsKeyMatchingKid()
-    {
-        $launch = $this->newLaunch(self::$baseUrl . '/certs', 'test-kid');
-        $method = new ReflectionMethod(LTI_Message_Launch::class, 'get_public_key');
-        $method->setAccessible(true);
-        $this->assertNotEmpty($method->invoke($launch));
-    }
-
-    public function testFetchKeySetNon2xxThrowsWithStatus()
+    public function testValidateThrowsWithStatusWhenKeySetServerErrors()
     {
         $this->setExpectedException(LTI_Public_Key_Exception::class, '500');
-        $this->fetchKeySet(self::$baseUrl . '/server-error');
+        $this->validateLaunch(self::$baseUrl . '/server-error');
     }
 
-    public function testFetchKeySetNonJsonThrows()
+    public function testValidateThrowsWithFinalStatusWhenKeySetRedirectsToError()
+    {
+        $this->setExpectedException(LTI_Public_Key_Exception::class, '500');
+        $this->validateLaunch(self::$baseUrl . '/redirect-to-server-error');
+    }
+
+    public function testValidateThrowsWhenKeySetIsNotJson()
     {
         $this->setExpectedException(LTI_Public_Key_Exception::class, 'not a JSON key set');
-        $this->fetchKeySet(self::$baseUrl . '/not-json');
+        $this->validateLaunch(self::$baseUrl . '/not-json');
     }
 
-    public function testFetchKeySetConnectionFailureThrows()
+    public function testValidateThrowsWhenKeySetServerIsUnreachable()
     {
         $this->setExpectedException(LTI_Public_Key_Exception::class, 'Failed to fetch public key');
-        $this->fetchKeySet('http://127.0.0.1:' . self::findFreePort() . '/certs');
+        $this->validateLaunch('http://127.0.0.1:' . self::findFreePort() . '/certs');
     }
 
-    private function fetchKeySet($url)
+    /**
+     * Validates a resource link launch signed with fixtures/private.key, whose registration
+     * points at the given key set URL.
+     */
+    private function validateLaunch($keySetUrl)
     {
-        $method = new ReflectionMethod(LTI_Message_Launch::class, 'fetch_key_set');
-        $method->setAccessible(true);
-        return $method->invoke($this->newLaunch($url, 'test-kid'), $url);
-    }
+        $payload = json_decode(file_get_contents(__DIR__ . '/fixtures/jwts/lti_message_launch_tests_jwt.json'), true);
+        $payload['https://purl.imsglobal.org/spec/lti/claim/message_type'] = 'LtiResourceLinkRequest';
+        $idToken = JWT::encode($payload, file_get_contents(__DIR__ . '/fixtures/private.key'), 'RS256', 'test-kid');
 
-    private function newLaunch($keySetUrl, $kid)
-    {
-        $launch = new LTI_Message_Launch(new DummyDatabase(), new InMemoryCache());
+        $state = uniqid();
+        /** @var Cookie|\PHPUnit_Framework_MockObject_MockObject $cookie */
+        $cookie = $this->getMockBuilder(Cookie::class)
+            ->setMethods(['get_cookie'])
+            ->getMock();
+        $cookie->method('get_cookie')->with('lti1p3_' . $state)->willReturn($state);
 
-        $registration = new ReflectionProperty(LTI_Message_Launch::class, 'registration');
-        $registration->setAccessible(true);
-        $registration->setValue($launch, LTI_Registration::newInstance()->set_key_set_url($keySetUrl));
+        $database = new class($keySetUrl) extends DummyDatabase {
+            private $keySetUrl;
 
-        $jwt = new ReflectionProperty(LTI_Message_Launch::class, 'jwt');
-        $jwt->setAccessible(true);
-        $jwt->setValue($launch, ['header' => ['kid' => $kid], 'body' => []]);
+            public function __construct($keySetUrl)
+            {
+                $this->keySetUrl = $keySetUrl;
+            }
 
-        return $launch;
+            public function find_registration_by_issuer($iss, $clientId = null)
+            {
+                $registration = parent::find_registration_by_issuer($iss, $clientId);
+                return $registration ? $registration->set_key_set_url($this->keySetUrl) : null;
+            }
+        };
+
+        return LTI_Message_Launch::newInstance($database, new InMemoryCache(), $cookie)
+            ->validate(['state' => $state, 'id_token' => $idToken]);
     }
 
     private static function findFreePort()
